@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard K-Medoids | Data Kesehatan</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root { --primary: #3b82f6; --bg-body: #f8fafc; --bg-card: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --border: #e2e8f0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg-body); color: var(--text-main); display: flex; min-height: 100vh; }
+        .sidebar { width: 260px; background-color: var(--bg-card); border-right: 1px solid var(--border); padding: 24px; position: fixed; height: 100vh; z-index: 9999; }
+        .sidebar-header { font-size: 1.25rem; font-weight: 700; color: var(--primary); margin-bottom: 40px; display: flex; align-items: center; gap: 10px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--text-muted); text-decoration: none; border-radius: 8px; margin-bottom: 8px; font-weight: 500; }
+        .nav-item.active { background-color: #eff6ff; color: var(--primary); }
+        .main-content { flex: 1; margin-left: 260px; padding: 40px; }
+        .header-title { margin-bottom: 32px; }
+        .header-title h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-bottom: 32px; }
+        .metric-card { background-color: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border); }
+        .metric-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .metric-value { font-size: 1.6rem; font-weight: 700; color: var(--text-main); }
+        .metric-icon { float: right; font-size: 1.4rem; color: var(--primary); opacity: 0.8; }
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+        .chart-card { background-color: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border); }
+        .chart-card h3 { font-size: 1.1rem; margin-bottom: 20px; font-weight: 600; }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+        .full-width-card { grid-column: 1 / -1; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { background-color: #f8fafc; padding: 16px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+        td { padding: 16px; border-bottom: 1px solid var(--border); }
+        .badge { padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500; }
+        .badge-c1 { background-color: #fee2e2; color: #dc2626; }
+        .badge-c2 { background-color: #cffafe; color: #0891b2; }
+        .badge-c3 { background-color: #dcfce7; color: #16a34a; }
+        .badge-c4 { background-color: #fef3c7; color: #d97706; }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header"><i class="fa-solid fa-notes-medical"></i> HealthData Indonesia</div>
+        <nav><a href="#" class="nav-item active"><i class="fa-solid fa-chart-pie"></i> Dashboard Utama</a></nav>
+    </aside>
+
+    <main class="main-content">
+        <div class="header-title">
+            <h1>Analisis Clustering Data Kesehatan (Live Data)</h1>
+            <p>Implementasi K-Medoids & PCA - Data dieksekusi langsung dari Python</p>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card"><i class="fa-solid fa-layer-group metric-icon"></i>
+                <div class="metric-title">Optimal Cluster (K)</div><div class="metric-value">{{ k }}</div>
+            </div>
+            <div class="metric-card"><i class="fa-solid fa-check-double metric-icon"></i>
+                <div class="metric-title">Silhouette Score</div><div class="metric-value">{{ sil_score }}</div>
+            </div>
+            <div class="metric-card"><i class="fa-solid fa-chart-line metric-icon" style="color: #ec4899;"></i>
+                <div class="metric-title">Elbow Score (WCSS)</div><div class="metric-value">{{ wcss_score }}</div>
+            </div>
+            <div class="metric-card"><i class="fa-solid fa-compress metric-icon"></i>
+                <div class="metric-title">Explained Var (PCA)</div><div class="metric-value">{{ var_pca }}%</div>
+            </div>
+            <div class="metric-card"><i class="fa-solid fa-map metric-icon"></i>
+                <div class="metric-title">Total Provinsi</div><div class="metric-value">{{ total_prov }}</div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card full-width-card">
+                <h3>Peta Geospasial Wilayah Cluster Indonesia</h3>
+                <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.9rem;">
+                    *Cluster 1 merah, Cluster 2 biru, Cluster 3 hijau, Cluster 4 kuning.
+                </p>
+                <div id="indoMap" style="height: 500px; width: 100%; border-radius: 8px; border: 1px solid var(--border); z-index: 1;"></div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Evaluasi Silhouette Method</h3>
+                <div class="chart-container"><canvas id="silChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Evaluasi Elbow Method (WCSS)</h3>
+                <div class="chart-container"><canvas id="elbowChart"></canvas></div>
+            </div>
+            <div class="chart-card full-width-card">
+                <h3>Profil Rata-rata per Cluster</h3>
+                <div class="chart-container"><canvas id="profilChart"></canvas></div>
+            </div>
+            <div class="chart-card full-width-card">
+                <h3>Visualisasi Sebaran K-Medoids dengan Convex Hull Shading (PCA 2D)</h3>
+                <div class="chart-container" style="height: 550px;"><canvas id="scatterChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3>Tabel Hasil Clustering Provinsi</h3>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead><tr><th>ID</th><th>Provinsi</th><th>Status Cluster</th><th>Keterangan Medoid</th></tr></thead>
+                    <tbody>
+                        {% for row in table_data %}
+                        <tr>
+                            <td>{{ row.id }}</td>
+                            <td>{{ row.provinsi }}</td>
+                            <td><span class="badge badge-c{{ row.cluster }}">Cluster {{ row.cluster }}</span></td>
+                            <td>
+                                {% if row.is_medoid %}
+                                    <i class="fa-solid fa-star" style="color: #f59e0b;"></i> Titik Medoid
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // ==================================================
+        // LOGIKA MAP PETA INDONESIA (LEAFLET.JS) - 38 PROVINSI + GEOJSON UPDATE 2024
+        // ==================================================
+        const map = L.map('indoMap').setView([-2.5, 118.0], 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap', subdomains: 'abcd', maxZoom: 20
+        }).addTo(map);
+
+        const coordsDict = {
+            "Aceh": [4.6951, 96.7494], "Sumatera Utara": [2.1154, 99.5451], "Sumatera Barat": [-0.7399, 100.8000],
+            "Riau": [0.2933, 101.7068], "Jambi": [-1.6116, 103.6131], "Sumatera Selatan": [-3.3194, 103.9144],
+            "Bengkulu": [-3.7928, 102.2608], "Lampung": [-4.5586, 105.1790], "Kepulauan Bangka Belitung": [-2.7411, 106.4406],
+            "Kepulauan Riau": [3.9457, 108.1429], "DKI Jakarta": [-6.2088, 106.8456], "Jawa Barat": [-6.9147, 107.6098],
+            "Jawa Tengah": [-7.1510, 110.1403], "DI Yogyakarta": [-7.7956, 110.3695], "Jawa Timur": [-7.5361, 112.2384],
+            "Banten": [-6.4058, 106.0640], "Bali": [-8.4095, 115.1889], "Nusa Tenggara Barat": [-8.6529, 117.3616],
+            "Nusa Tenggara Timur": [-8.6224, 121.0794], "Kalimantan Barat": [-0.2788, 111.4753], "Kalimantan Tengah": [-1.6815, 113.3824],
+            "Kalimantan Selatan": [-3.0926, 115.2838], "Kalimantan Timur": [0.5387, 116.4194], "Kalimantan Utara": [3.0731, 116.0414],
+            "Sulawesi Utara": [0.6247, 123.9750], "Sulawesi Tengah": [-1.4300, 121.4456], "Sulawesi Selatan": [-3.6688, 119.9741],
+            "Sulawesi Tenggara": [-4.1449, 122.1746], "Gorontalo": [0.6999, 122.4467], "Sulawesi Barat": [-2.8441, 119.2313],
+            "Maluku": [-3.2385, 130.1453], "Maluku Utara": [1.5710, 127.8088], "Papua": [-4.2699, 138.0804],
+            "Papua Barat": [-1.3361, 133.1747], "Papua Selatan": [-7.5, 139.5], "Papua Tengah": [-3.9, 136.0],
+            "Papua Pegunungan": [-4.2, 139.1], "Papua Barat Daya": [-1.2, 131.7]
+        };
+
+        const mapColors = { 1: '#ef4444', 2: '#06b6d4', 3: '#10b981', 4: '#f59e0b' };
+        
+        // Ambil info dari tabel Python yang dirender
+        const tableRows = document.querySelectorAll('tbody tr');
+        const clusterPointsMapping = {1: [], 2: [], 3: [], 4: []};
+        const provinceClusterList = []; 
+
+        tableRows.forEach(row => {
+            const id = row.cells[0].innerText.trim();
+            const name = row.cells[1].innerText.trim();
+            const clusterNum = parseInt(row.cells[2].innerText.trim().replace('Cluster ', ''));
+            const isMedoid = row.cells[3].innerText.includes('Medoid');
+            
+            if(clusterPointsMapping[clusterNum]) clusterPointsMapping[clusterNum].push({ id: id, name: name });
+            provinceClusterList.push({name: name, cluster: clusterNum, isMedoid: isMedoid});
+        });
+
+        // 1. TAMBAHKAN ARSIRAN DARI REPOSITORI GEOJSON 38 PROVINSI
+        fetch('https://raw.githubusercontent.com/denyherianto/indonesia-geojson-topojson-maps-with-38-provinces/main/GeoJSON/indonesia-38-provinces.geojson')
+            .then(response => response.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    style: function(feature) {
+                        let matchedProv = null;
+                        
+                        // Ambil semua value dari peta (misal: "Aceh", "ID-AC")
+                        let propsVals = Object.values(feature.properties).map(v => String(v).toUpperCase());
+                        // Jadikan string utuh untuk pencarian kata
+                        let propsStr = JSON.stringify(feature.properties).toUpperCase();
+                        
+                        // ALGORITMA PENCOCOKAN 1: Cari kecocokan persis (Exact Match)
+                        for (let p of provinceClusterList) {
+                            if (propsVals.includes(p.name.toUpperCase())) {
+                                matchedProv = p;
+                                break;
+                            }
+                        }
+                        
+                        // ALGORITMA PENCOCOKAN 2: Fuzzy Match (Jika nama di peta pakai format lain)
+                        if (!matchedProv) {
+                            for (let p of provinceClusterList) {
+                                let pName = p.name.toUpperCase();
+                                if (pName === "DI YOGYAKARTA" && propsStr.includes("YOGYAKARTA")) { matchedProv = p; break; }
+                                if (pName === "DKI JAKARTA" && propsStr.includes("JAKARTA")) { matchedProv = p; break; }
+                                if (pName === "KEPULAUAN BANGKA BELITUNG" && propsStr.includes("BANGKA BELITUNG")) { matchedProv = p; break; }
+                                
+                                // Cek string lain, tapi kecualikan Papua agar "Papua" tidak menimpa "Papua Barat"
+                                if (!pName.includes("PAPUA") && propsStr.includes(pName)) {
+                                    matchedProv = p; 
+                                    break;
+                                }
+                            }
+                        }
+
+                        // ALGORITMA PENCOCOKAN 3: Khusus penanganan string keluarga Papua
+                        if (!matchedProv) {
+                            if (propsStr.includes("PAPUA BARAT DAYA")) matchedProv = provinceClusterList.find(p => p.name.toUpperCase() === "PAPUA BARAT DAYA");
+                            else if (propsStr.includes("PAPUA BARAT")) matchedProv = provinceClusterList.find(p => p.name.toUpperCase() === "PAPUA BARAT");
+                            else if (propsStr.includes("PAPUA TENGAH")) matchedProv = provinceClusterList.find(p => p.name.toUpperCase() === "PAPUA TENGAH");
+                            else if (propsStr.includes("PAPUA SELATAN")) matchedProv = provinceClusterList.find(p => p.name.toUpperCase() === "PAPUA SELATAN");
+                            else if (propsStr.includes("PAPUA PEGUNUNGAN")) matchedProv = provinceClusterList.find(p => p.name.toUpperCase() === "PAPUA PEGUNUNGAN");
+                            else if (propsStr.includes("PAPUA")) matchedProv = provinceClusterList.find(p => p.name.toUpperCase() === "PAPUA");
+                        }
+                        
+                        let color = "#e2e8f0"; // Warna abu-abu default jika masih gagal
+                        if (matchedProv) {
+                            color = mapColors[matchedProv.cluster];
+                        }
+                        
+                        return {
+                            fillColor: color,
+                            weight: 1.5,
+                            opacity: 1,
+                            color: '#ffffff', // Garis putih batas provinsi
+                            fillOpacity: 0.65  // Transparansi warna dalam
+                        };
+                    }
+                }).addTo(map);
+
+                // 2. TAMBAHKAN TITIK/POINTER DI ATAS PETA
+                provinceClusterList.forEach(prov => {
+                    const coords = coordsDict[prov.name];
+                    if(coords) {
+                        const color = mapColors[prov.cluster] || '#333333';
+                        const circle = L.circleMarker(coords, {
+                            color: '#ffffff', weight: prov.isMedoid ? 4 : 1.5, fillColor: color, fillOpacity: 0.9, radius: prov.isMedoid ? 10 : 6
+                        }).addTo(map);
+                        circle.bindPopup(`<b>${prov.name}</b><br>Cluster ${prov.cluster} ${prov.isMedoid ? '<br><i>(Titik Medoid)</i>' : ''}`);
+                    }
+                });
+            })
+            .catch(error => {
+                console.error("Gagal memuat batas wilayah:", error);
+            });
+
+        // ==================================================
+        // 3. CHART LAINNYA (Silhouette, Elbow, Bar, Scatter)
+        // ==================================================
+        new Chart(document.getElementById('silChart').getContext('2d'), { type: 'line', data: { labels: {{ eval_labels | safe }}, datasets: [{ label: 'Silhouette Score', data: {{ eval_data | safe }}, borderColor: '#3b82f6', backgroundColor: '#3b82f6', tension: 0.3 }] }, options: { responsive: true, maintainAspectRatio: false } });
+        new Chart(document.getElementById('elbowChart').getContext('2d'), { type: 'line', data: { labels: {{ eval_labels | safe }}, datasets: [{ label: 'WCSS Score', data: {{ wcss_data | safe }}, borderColor: '#ec4899', backgroundColor: '#ec4899', tension: 0.3 }] }, options: { responsive: true, maintainAspectRatio: false } });
+        new Chart(document.getElementById('profilChart').getContext('2d'), { type: 'bar', data: { labels: {{ bar_labels | safe }}, datasets: {{ bar_datasets | safe }} }, options: { responsive: true, maintainAspectRatio: false } });
+
+        const rawDatasets = {{ scatter_datasets | safe }};
+        rawDatasets.forEach((dataset, idx) => {
+            const mapping = clusterPointsMapping[idx + 1];
+            if (mapping) dataset.data.forEach((point, pIdx) => { if (mapping[pIdx]) { point.id = mapping[pIdx].id; point.name = mapping[pIdx].name; } });
+        });
+
+        function getConvexHull(points) {
+            if (points.length < 3) return points;
+            const sorted = points.slice().sort((a, b) => a.x !== b.x ? a.x - b.x : a.y - b.y);
+            const lower = [];
+            for (const p of sorted) { while (lower.length >= 2 && ((lower[lower.length - 1].x - lower[lower.length - 2].x) * (p.y - lower[lower.length - 2].y) - (lower[lower.length - 1].y - lower[lower.length - 2].y) * (p.x - lower[lower.length - 2].x)) <= 0) lower.pop(); lower.push(p); }
+            const upper = [];
+            for (let i = sorted.length - 1; i >= 0; i--) { const p = sorted[i]; while (upper.length >= 2 && ((upper[upper.length - 1].x - upper[upper.length - 2].x) * (p.y - upper[upper.length - 2].y) - (upper[upper.length - 1].y - upper[upper.length - 2].y) * (p.x - upper[upper.length - 2].x)) <= 0) upper.pop(); upper.push(p); }
+            upper.pop(); lower.pop(); return lower.concat(upper);
+        }
+
+        const convexHullPlugin = {
+            id: 'convexHullShading',
+            beforeDatasetsDraw(chart) {
+                const { ctx, scales: { x, y } } = chart;
+                chart.data.datasets.forEach(dataset => {
+                    if (!dataset.data || dataset.data.length < 3) return;
+                    const hull = getConvexHull(dataset.data);
+                    if (hull.length < 3) return;
+                    ctx.save(); ctx.beginPath(); ctx.moveTo(x.getPixelForValue(hull[0].x), y.getPixelForValue(hull[0].y));
+                    for (let i = 1; i < hull.length; i++) ctx.lineTo(x.getPixelForValue(hull[i].x), y.getPixelForValue(hull[i].y));
+                    ctx.closePath();
+                    let color = dataset.backgroundColor;
+                    ctx.fillStyle = `rgba(${parseInt(color.slice(1,3),16)}, ${parseInt(color.slice(3,5),16)}, ${parseInt(color.slice(5,7),16)}, 0.25)`;
+                    ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+                });
+            }
+        };
+
+        const provinceLabelsPlugin = {
+            id: 'provinceLabels',
+            afterDatasetsDraw(chart) {
+                const { ctx, scales: { x, y } } = chart;
+                ctx.save(); ctx.font = '500 10px Inter, sans-serif'; ctx.fillStyle = '#475569'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                chart.data.datasets.forEach(dataset => {
+                    if (dataset.data) dataset.data.forEach(point => {
+                        if (point.name) ctx.fillText(`  ${point.id}. ${point.name}`, x.getPixelForValue(point.x), y.getPixelForValue(point.y));
+                    });
+                });
+                ctx.restore();
+            }
+        };
+
+        new Chart(document.getElementById('scatterChart').getContext('2d'), {
+            type: 'scatter', data: { datasets: rawDatasets }, plugins: [convexHullPlugin, provinceLabelsPlugin],
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'Dim1 (PCA)' }, grid: { display: true } }, y: { title: { display: true, text: 'Dim2 (PCA)' }, grid: { display: true } } } }
+        });
+    </script>
+</body>
+</html>
